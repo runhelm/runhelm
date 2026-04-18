@@ -634,16 +634,15 @@ export function TicketDetailView({
         <div className="ticket-body">
           {/* --- MAIN COLUMN --- */}
           <div className="ticket-main-col">
-            {t.description && (
-              <>
-                <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 13, textTransform: "uppercase", color: "var(--text-subtle)" }}>
-                  Beschreibung
-                </h3>
-                <div className="ticket-desc" style={{ marginBottom: 16 }}>
-                  {t.description}
-                </div>
-              </>
-            )}
+            <TicketDescription
+              t={t}
+              projectId={projectId}
+              onSaved={() => {
+                onChanged();
+                refresh();
+              }}
+            />
+
 
             <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 13, textTransform: "uppercase", color: "var(--text-subtle)" }}>
               Aktivität
@@ -795,6 +794,131 @@ export function TicketDetailView({
             )}
           </div>
         </div>
+    </div>
+  );
+}
+
+function TicketDescription({
+  t,
+  projectId,
+  onSaved,
+}: {
+  t: TicketWithComments;
+  projectId: string;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(t.description ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(t.description ?? "");
+  }, [t.description, editing]);
+
+  const canEdit =
+    t.status === "backlog" ||
+    t.status === "in_progress" ||
+    t.status === "awaiting_reply";
+
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const next = draft.trim() ? draft : null;
+      await api(`/api/projects/${projectId}/tickets/${t.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ description: next }),
+      });
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = () => {
+    setDraft(t.description ?? "");
+    setEditing(false);
+    setErr(null);
+  };
+
+  const header = (
+    <div
+      className="row"
+      style={{ marginTop: 0, marginBottom: 8, alignItems: "center", gap: 8 }}
+    >
+      <h3
+        style={{
+          margin: 0,
+          fontSize: 13,
+          textTransform: "uppercase",
+          color: "var(--text-subtle)",
+        }}
+      >
+        Beschreibung
+      </h3>
+      {canEdit && !editing && (
+        <button
+          className="ghost"
+          style={{ marginLeft: "auto", fontSize: 12, padding: "2px 8px" }}
+          onClick={() => setEditing(true)}
+        >
+          <Icon name="pencil" size={12} /> Bearbeiten
+        </button>
+      )}
+    </div>
+  );
+
+  if (editing) {
+    return (
+      <div style={{ marginBottom: 16 }}>
+        {header}
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={6}
+          placeholder="Akzeptanzkriterien, Hinweise…"
+          autoFocus
+          disabled={busy}
+          style={{ width: "100%" }}
+        />
+        {(t.status === "in_progress" || t.status === "awaiting_reply") && (
+          <div className="hint" style={{ fontSize: 11, marginTop: 4 }}>
+            Hinweis: Änderungen werden der laufenden KI als Notify geschickt.
+          </div>
+        )}
+        <div className="row" style={{ gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
+          {err && (
+            <span className="badge err" style={{ marginRight: "auto" }}>
+              {err}
+            </span>
+          )}
+          <button className="ghost" onClick={cancel} disabled={busy}>
+            Abbrechen
+          </button>
+          <button className="primary" onClick={save} disabled={busy}>
+            {busy ? "speichere…" : <><Icon name="check" size={13} /> Speichern</>}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {header}
+      {t.description ? (
+        <div className="ticket-desc">{t.description}</div>
+      ) : (
+        <div className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>
+          {canEdit
+            ? "Keine Beschreibung — nutze „Bearbeiten“, um eine hinzuzufügen."
+            : "Keine Beschreibung."}
+        </div>
+      )}
     </div>
   );
 }

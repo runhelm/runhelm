@@ -11,7 +11,7 @@ import {
   type TicketStatus,
 } from "../tickets.js";
 import { getProject } from "../workers.js";
-import { acceptTicket } from "../scheduler.js";
+import { acceptTicket, notifyTicketDescriptionChanged } from "../scheduler.js";
 
 export default async function ticketRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>(
@@ -88,7 +88,21 @@ export default async function ticketRoutes(app: FastifyInstance) {
     const t = getTicket(req.params.tid);
     if (!t || t.project_id !== req.params.id)
       return reply.code(404).send({ error: "ticket not found" });
-    const updated = updateTicket(t.id, req.body ?? {});
+    const body = req.body ?? {};
+    const descInBody = Object.prototype.hasOwnProperty.call(body, "description");
+    const newDesc = descInBody ? (body.description ?? null) : t.description;
+    const descChanged = descInBody && newDesc !== t.description;
+    if (descChanged && (t.status === "ready_for_testing" || t.status === "done" || t.status === "cancelled")) {
+      return reply
+        .code(409)
+        .send({ error: "Beschreibung kann ab 'ready for test' nicht mehr geändert werden." });
+    }
+    const updated = updateTicket(t.id, body);
+    if (descChanged && updated && (updated.status === "in_progress" || updated.status === "awaiting_reply")) {
+      notifyTicketDescriptionChanged(updated.id).catch((err) =>
+        req.log.error({ err }, "description notify failed")
+      );
+    }
     return updated;
   });
 

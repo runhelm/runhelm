@@ -650,6 +650,43 @@ async function recoverOnBoot(): Promise<void> {
 export { getActiveTicket };
 
 /**
+ * Notify a running worker that the ticket description has been edited.
+ * Adds a system comment and, if the ticket is currently in_progress,
+ * forwards an update prompt so the AI picks up the new description.
+ */
+export async function notifyTicketDescriptionChanged(
+  ticketId: string
+): Promise<void> {
+  const t = getTicket(ticketId);
+  if (!t) return;
+  if (t.status !== "in_progress" && t.status !== "awaiting_reply") return;
+
+  const desc = t.description?.trim() ? t.description : "(leer)";
+  const body = [
+    `Die Ticket-Beschreibung wurde vom User aktualisiert. Bitte berücksichtige die neue Fassung in deiner weiteren Arbeit.`,
+    ``,
+    `Neue Beschreibung:`,
+    desc,
+  ].join("\n");
+
+  await addComment(ticketId, "system", `📝 Beschreibung aktualisiert.`, "ui");
+
+  const worker = getWorkerId(t.project_id);
+  if (!worker) return;
+  const active = getActiveInProgress(t.project_id);
+  if (!active || active.id !== ticketId) return;
+
+  bus.emit({
+    type: "user_prompt",
+    workerId: worker,
+    projectId: t.project_id,
+    text: body,
+    origin: "scheduler",
+    ticketId: t.id,
+  });
+}
+
+/**
  * Start a sprint: create the sprint branch from the project's base ref,
  * push it to origin, and flip status active.
  */
